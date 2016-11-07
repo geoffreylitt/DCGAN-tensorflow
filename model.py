@@ -58,6 +58,7 @@ class DCGAN(object):
 
         self.g_bn0 = batch_norm(name='g_bn0')
         self.g_bn1 = batch_norm(name='g_bn1')
+        self.g_bn15 = batch_norm(name='g_bn15')
         self.g_bn2 = batch_norm(name='g_bn2')
 
         if not self.y_dim:
@@ -195,6 +196,11 @@ class DCGAN(object):
                         feed_dict={ self.z: batch_z, self.y:batch_labels })
                     self.writer.add_summary(summary_str, counter)
 
+                    # Run g_optim twice to make sure that d_loss does not go to zero (different from paper)
+                    _, summary_str = self.sess.run([g_optim, self.g_sum],
+                        feed_dict={ self.z: batch_z, self.y:batch_labels })
+                    self.writer.add_summary(summary_str, counter)
+
                     errD_fake = self.d_loss_fake.eval({self.z: batch_z, self.y:batch_labels})
                     errD_real = self.d_loss_real.eval({self.images: batch_images, self.y:batch_labels})
                     errG = self.g_loss.eval({self.z: batch_z, self.y:batch_labels})
@@ -300,7 +306,8 @@ class DCGAN(object):
             return tf.nn.tanh(h4)
         else:
             s = self.output_size
-            s2, s4 = int(s/2), int(s/4)
+            # s7 gives us 4x4 for the weird 28x28 MNIST shape
+            s2, s4, s7 = int(s/2), int(s/4), int(s/7)
 
             # yb = tf.expand_dims(tf.expand_dims(y, 1),2)
             yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
@@ -309,12 +316,21 @@ class DCGAN(object):
             h0 = tf.nn.relu(self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin')))
             h0 = tf.concat(1, [h0, y])
 
-            h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s4*s4, 'g_h1_lin')))
-            h1 = tf.reshape(h1, [self.batch_size, s4, s4, self.gf_dim * 2])
+            h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s7*s7, 'g_h1_lin')))
+            h1 = tf.reshape(h1, [self.batch_size, s7, s7, self.gf_dim * 2])
+
+            print "h1 shape"
+            print h1.get_shape()
 
             h1 = conv_cond_concat(h1, yb)
 
-            h2 = tf.nn.relu(self.g_bn2(deconv2d(h1, [self.batch_size, s2, s2, 4], name='g_h2')))
+            h15 = tf.nn.relu(self.g_bn15(deconv2d(h1, [self.batch_size, s4, s4, 32], name='g_h15')))
+            h15 = conv_cond_concat(h15, yb)
+
+            print "h15 shape"
+            print h15.get_shape()
+
+            h2 = tf.nn.relu(self.g_bn2(deconv2d(h15, [self.batch_size, s2, s2, 4], name='g_h2')))
             # h2 = conv_cond_concat(h2, yb)
 
             print "h2 shape"
@@ -355,7 +371,7 @@ class DCGAN(object):
             return tf.nn.tanh(h4)
         else:
             s = self.output_size
-            s2, s4 = int(s/2), int(s/4)
+            s2, s4, s7 = int(s/2), int(s/4), int(s/7)
 
             # yb = tf.reshape(y, [-1, 1, 1, self.y_dim])
             yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
@@ -364,11 +380,14 @@ class DCGAN(object):
             h0 = tf.nn.relu(self.g_bn0(linear(z, self.gfc_dim, 'g_h0_lin')))
             h0 = tf.concat(1, [h0, y])
 
-            h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s4*s4, 'g_h1_lin'), train=False))
-            h1 = tf.reshape(h1, [self.batch_size, s4, s4, self.gf_dim * 2])
+            h1 = tf.nn.relu(self.g_bn1(linear(h0, self.gf_dim*2*s7*s7, 'g_h1_lin'), train=False))
+            h1 = tf.reshape(h1, [self.batch_size, s7, s7, self.gf_dim * 2])
             h1 = conv_cond_concat(h1, yb)
 
-            h2 = tf.nn.relu(self.g_bn2(deconv2d(h1, [self.batch_size, s2, s2, 4], name='g_h2'), train=False))
+            h15 = tf.nn.relu(self.g_bn15(deconv2d(h1, [self.batch_size, s4, s4, 32], name='g_h15')))
+            h15 = conv_cond_concat(h15, yb)
+
+            h2 = tf.nn.relu(self.g_bn2(deconv2d(h15, [self.batch_size, s2, s2, 4], name='g_h2'), train=False))
             # h2 = conv_cond_concat(h2, yb)
 
             print "h2 shape"
